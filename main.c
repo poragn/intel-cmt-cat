@@ -223,6 +223,11 @@ static char *sel_allocation_profile = NULL;
 static int sel_verbose_mode = 0;
 
 /**
+ * Function prototypes
+ */
+static void selfn_strdup(char **sel, const char *arg);
+
+/**
  * @brief Check to determine if processes or cores are monitored
  *
  * @return Process monitoring mode status
@@ -475,8 +480,7 @@ selfn_monitor_cores(const char *arg)
          */
         sel_events_max = 0;
 
-        cp = strdup(arg);
-        ASSERT(cp != NULL);
+        selfn_strdup(&cp, arg);
 
         for (str = cp; ; str = NULL) {
                 char *token = NULL;
@@ -639,7 +643,7 @@ set_allocation_class(unsigned sock_count,
 
         while (sock_count > 0 && sel_l3ca_cos_num > 0) {
                 ret = pqos_l3ca_set(*sockets,
-                                    sel_l3ca_cos_num,
+                                    (unsigned)sel_l3ca_cos_num,
                                     sel_l3ca_cos_tab);
                 ASSERT(ret == PQOS_RETVAL_OK);
                 if (ret != PQOS_RETVAL_OK) {
@@ -827,8 +831,7 @@ selfn_allocation_class(const char *arg)
         if (strlen(arg) <= 0)
                 parse_error(arg, "Empty string!");
 
-        cp = strdup(arg);
-        ASSERT(cp != NULL);
+        selfn_strdup(&cp, arg);
 
         for (str = cp; ; str = NULL) {
                 char *token = NULL;
@@ -964,8 +967,7 @@ selfn_allocation_assoc(const char *arg)
         if (strlen(arg) <= 0)
                 parse_error(arg, "Empty string!");
 
-        cp = strdup(arg);
-        ASSERT(cp != NULL);
+        selfn_strdup(&cp, arg);
 
         for (str = cp; ; str = NULL) {
                 char *token = NULL;
@@ -1096,6 +1098,11 @@ selfn_strdup(char **sel, const char *arg)
                 *sel = NULL;
         }
         *sel = strdup(arg);
+        ASSERT(*sel != NULL);
+        if (*sel == NULL) {
+                printf("String duplicate error!\n");
+                exit(EXIT_FAILURE);
+        }
 }
 
 /**
@@ -1232,7 +1239,7 @@ sel_store_process_id(char *str)
                 }
 		if (!found) {
 		        sel_monitor_pid_tab[sel_process_num].pid =
-			        (unsigned) processes[i];
+			        (pid_t) processes[i];
 			sel_monitor_pid_tab[sel_process_num].events = evt;
 			m_mon_grps[sel_process_num] =
 			        malloc(sizeof(**m_mon_grps));
@@ -1268,8 +1275,7 @@ selfn_monitor_pids(const char *arg)
         /**
          * The parser will add to the display only necessary columns
          */
-        cp = strdup(arg);
-        ASSERT(cp != NULL);
+        selfn_strdup(&cp, arg);
 	sel_events_max = 0;
 
         for (str = cp; ; str = NULL) {
@@ -1373,24 +1379,24 @@ parse_config_file(const char *fname)
                         continue; /**< comment */
 
                 cp = cb+j;
-                remain = strlen(cp);
+                remain = (int)strlen(cp);
 
                 /**
                  * remove trailing white spaces
                  */
-                for (i = strlen(cp)-1; i > 0; i--)
+                for (i = (int)strlen(cp)-1; i > 0; i--)
                         if (!isspace(cp[i])) {
                                 cp[i+1] = '\0';
                                 break;
                         }
 
                 for (i = 0; i < (int)DIM(optab); i++) {
-                        int len = strlen(optab[i].option);
+                        int len = (int)strlen(optab[i].option);
 
                         if (len > remain)
                                 continue;
 
-                        if (strncasecmp(cp, optab[i].option, len) != 0)
+                        if (strncasecmp(cp, optab[i].option, (size_t)len) != 0)
                                 continue;
 
                         while (isspace(cp[len]))
@@ -1558,14 +1564,14 @@ static size_t
 fillin_text_column(const double val, char data[], const size_t sz_data,
                    const int is_monitored, const int is_column_present)
 {
-        const char blank_column[] = "          ";
+        const char blank_column[] = "           ";
         size_t offset = 0;
 
         if (is_monitored) {
                 /**
                  * This is monitored and we have the data
                  */
-                snprintf(data, sz_data - 1, "%10.1f", val);
+                snprintf(data, sz_data - 1, "%11.1f", val);
                 offset = strlen(data);
         } else if (is_column_present) {
                 /**
@@ -1737,12 +1743,14 @@ monitoring_loop(FILE *fp,
         if ((!istext)  && (strcasecmp(output_type, "xml") != 0)) {
                 printf("Invalid selection of output file type '%s'!\n",
                        output_type);
+                free(mon_data);
                 return;
         }
 
         ret = get_event_factors(cap, &llc_factor, &mbr_factor, &mbl_factor);
         if (ret != PQOS_RETVAL_OK) {
                 printf("Error in retrieving monitoring scale factors!\n");
+                free(mon_data);
                 return;
         }
 
@@ -1786,6 +1794,7 @@ monitoring_loop(FILE *fp,
                 header = (char *) alloca(sz_header);
                 if (header == NULL) {
                         printf("Failed to allocate stack frame memory!\n");
+                        free(mon_data);
                         return;
                 }
                 memset(header, 0, sz_header);
@@ -1803,10 +1812,10 @@ monitoring_loop(FILE *fp,
                         strncat(header, "    LLC[KB]",
                                 sz_header - strlen(header) - 1);
                 if (sel_events_max & PQOS_MON_EVENT_LMEM_BW)
-                        strncat(header, " MBL[MB/s]",
+                        strncat(header, "  MBL[MB/s]",
                                 sz_header - strlen(header) - 1);
                 if (sel_events_max & PQOS_MON_EVENT_RMEM_BW)
-                        strncat(header, " MBR[MB/s]",
+                        strncat(header, "  MBR[MB/s]",
                                 sz_header - strlen(header) - 1);
         }
 
@@ -1823,6 +1832,7 @@ monitoring_loop(FILE *fp,
 				    (unsigned) mon_number);
 		if (ret != PQOS_RETVAL_OK) {
 		        printf("Failed to poll monitoring data!\n");
+			free(mon_data);
 			return;
 		}
 
@@ -1883,13 +1893,13 @@ monitoring_loop(FILE *fp,
 						mon_data[i]->event,
 						llc, mbr, mbl);
 				if (!process_mode()) {
-				        fprintf(fp, "\n%6u %8u %8u %s",
+				        fprintf(fp, "\n%6u %8u %8u%s",
                                                 mon_data[i]->socket,
 						mon_data[i]->cores[0],
 						mon_data[i]->rmid,
 						data);
 				} else {
-				        fprintf(fp, "\n%6u %6s %8s %s",
+				        fprintf(fp, "\n%6u %6s %8s%s",
 						mon_data[i]->pid,
 						"N/A",
 						"N/A",
@@ -1937,9 +1947,11 @@ monitoring_loop(FILE *fp,
 						xml_child_close,
 						xml_root_close);
 				}
-				fseek(fp,
-				      -xml_root_close_size,
-				      SEEK_CUR);
+				if (fseek(fp, -xml_root_close_size,
+                                          SEEK_CUR) == -1) {
+                                        perror("File seek error");
+                                        return;
+                                }
 			}
                 }
                 fflush(fp);
@@ -1952,18 +1964,16 @@ monitoring_loop(FILE *fp,
 
                 gettimeofday(&tv_e, NULL);
 
-                if (stop_monitoring_loop) {
-                        if (istty)
-                                fputs("\n", fp);
+                if (stop_monitoring_loop)
                         break;
-                }
 
                 /**
                  * Calculate microseconds to the nearest measurement interval
                  */
                 usec_start = ((long)tv_s.tv_usec) +
-                        ((long)tv_s.tv_sec*1000000L);
-                usec_end = ((long)tv_e.tv_usec) + ((long)tv_e.tv_sec*1000000L);
+                        ((long)tv_s.tv_sec * 1000000L);
+                usec_end = ((long)tv_e.tv_usec) +
+                        ((long)tv_e.tv_sec * 1000000L);
                 usec_diff = usec_end - usec_start;
 
                 if (usec_diff < interval) {
@@ -1971,12 +1981,14 @@ monitoring_loop(FILE *fp,
                         memset(&req, 0, sizeof(req));
 
                         req.tv_sec = (interval - usec_diff) / 1000000L;
-                        req.tv_nsec = ((interval - usec_diff)%1000000L) *
-                                1000L;
+                        req.tv_nsec =
+                                ((interval - usec_diff) % 1000000L) * 1000L;
                         if (nanosleep(&req, &rem) == -1) {
                                 /**
                                  * nanosleep interrupted by a signal
                                  */
+                                if (stop_monitoring_loop)
+                                        break;
                                 req = rem;
                                 memset(&rem, 0, sizeof(rem));
                                 nanosleep(&req, &rem);
@@ -1990,6 +2002,10 @@ monitoring_loop(FILE *fp,
                 }
 
         }
+
+        if (istty)
+                fputs("\n\n", fp);
+
 	free(mon_data);
 
 }
@@ -2136,10 +2152,14 @@ int main(int argc, char **argv)
                         selfn_verbose_mode(NULL);
                         break;
                 default:
-                        printf("Unsupported option: %c\n", optopt);
+                        printf("Unsupported option: -%c. "
+                               "See option -h for help.\n", optopt);
+                        return EXIT_FAILURE;
+                        break;
                 case '?':
                         print_help();
                         return EXIT_SUCCESS;
+                        break;
                 }
         }
 
@@ -2186,13 +2206,22 @@ int main(int argc, char **argv)
                         goto error_exit_1;
                 }
                 if (strcasecmp(sel_output_type, "xml") == 0) {
-                        fseek(fp_monitor, 0, SEEK_END);
+                        if (fseek(fp_monitor, 0, SEEK_END) == -1) {
+                                perror("File seek error");
+                                exit_val = EXIT_FAILURE;
+                                goto error_exit_1;
+                        }
                         if (ftell(fp_monitor) == 0)
                                 fprintf(fp_monitor,
                                         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                                         "%s\n%s",
                                         xml_root_open, xml_root_close);
-                        fseek(fp_monitor, -xml_root_close_size, SEEK_CUR);
+                        if (fseek(fp_monitor,
+                                  -xml_root_close_size, SEEK_CUR) == -1) {
+                                perror("File seek error");
+                                exit_val = EXIT_FAILURE;
+                                goto error_exit_1;
+                        }
                 }
         }
 
@@ -2369,7 +2398,7 @@ int main(int argc, char **argv)
         /**
          * Close file descriptor for message log
          */
-        if (sel_log_file != NULL)
+        if (cfg.fd_log > 0 && cfg.fd_log != STDOUT_FILENO)
                 close(cfg.fd_log);
 
         /**
